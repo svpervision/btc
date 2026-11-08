@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BTC Live · 15-Min Bands</title>
+<style>
+  :root{--bg:#0b0d10;--panel:#14171c;--panel2:#101317;--line:#242932;--text:#eceef2;--mute:#8a92a0;--up:#2fbf71;--down:#ef5350;--btc:#f7931a}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 -apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif}
+  .wrap{max-width:1200px;margin:0 auto;padding:18px}
+  .num{font-variant-numeric:tabular-nums}
+  header{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:end;margin-bottom:14px}
+  @media(max-width:760px){header{grid-template-columns:1fr}}
+  .lbl{font-size:11px;color:var(--mute);letter-spacing:.06em;text-transform:uppercase}
+  .price{font-size:56px;font-weight:750;letter-spacing:-.025em;line-height:1.05;transition:color .25s}
+  .live{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mute)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--mute)}
+  .dot.on{background:var(--up);animation:p 1.6s infinite}
+  @keyframes p{0%{box-shadow:0 0 0 0 rgba(47,191,113,.6)}100%{box-shadow:0 0 0 8px rgba(47,191,113,0)}}
+  .tgt{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:290px}
+  input,select{background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:8px 10px;font:inherit;font-variant-numeric:tabular-nums;width:100%}
+  input:focus,select:focus{outline:none;border-color:var(--btc)}
+  #target{margin-top:6px;font-size:18px;font-weight:600}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  @media(max-width:980px){.grid{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:520px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
+  .card.next{border-color:rgba(247,147,26,.6)}
+  .hd{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .hd b{font-size:17px}
+  .cd{font-size:12px;color:var(--mute)}
+  .best{margin:10px 0 2px;font-size:25px;font-weight:750;letter-spacing:-.01em}
+  .bestp{font-size:12.5px;color:var(--mute)}
+  .bestp b{color:var(--btc)}
+  .ladder{margin-top:12px;display:flex;flex-direction:column;gap:3px}
+  .rung{display:grid;grid-template-columns:112px 1fr 34px;gap:8px;align-items:center;font-size:12px;padding:2px 4px;border-radius:5px}
+  .rung.cur{background:rgba(247,147,26,.13)}
+  .rung .r{color:var(--mute)} .rung.cur .r{color:var(--text);font-weight:600}
+  .rung .b{height:8px;background:#1d2229;border-radius:4px;overflow:hidden}
+  .rung .b i{display:block;height:100%;background:var(--btc);opacity:.85}
+  .rung .p{text-align:right;color:var(--mute)}
+  .vs{margin-top:12px;padding-top:10px;border-top:1px solid var(--line);font-size:13px;display:flex;justify-content:space-between;align-items:center}
+  .vs .v{font-weight:750;font-size:15px}
+  .up{color:var(--up)} .down{color:var(--down)} .flat{color:var(--mute)}
+  .row{display:grid;grid-template-columns:1fr 320px;gap:12px;margin-top:12px}
+  @media(max-width:980px){.row{grid-template-columns:1fr}}
+  canvas{width:100%;height:250px;display:block}
+  .kv{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px}
+  .kv span:first-child{color:var(--mute)}
+  .meter{height:6px;border-radius:3px;background:linear-gradient(90deg,var(--down),#3a3f48 50%,var(--up));position:relative;margin:10px 0 4px}
+  .meter i{position:absolute;top:-4px;width:3px;height:14px;background:#fff;border-radius:2px;transform:translateX(-50%);transition:left .4s}
+  details{margin-top:0}
+  summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center}
+  summary::-webkit-details-marker{display:none}
+  .ntf{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;margin-top:12px}
+  @media(max-width:980px){.ntf{grid-template-columns:1fr}}
+  .ntf h4{margin:0 0 8px;font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+  .f{margin-bottom:8px} .f label{display:block;font-size:11.5px;color:var(--mute);margin-bottom:3px}
+  .chk{display:flex;align-items:center;gap:8px;font-size:13px;margin:7px 0;flex-wrap:wrap} .chk input[type=checkbox]{width:auto}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  button{background:#1e232b;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font:inherit;cursor:pointer}
+  button.pri{background:var(--btc);border-color:var(--btc);color:#111;font-weight:600}
+  .phones{display:flex;flex-direction:column;gap:6px}
+  .ph{display:grid;grid-template-columns:1fr auto;gap:6px}
+  .hint{font-size:11.5px;color:var(--mute);line-height:1.5}
+  .feed{max-height:150px;overflow:auto;font-size:12px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+  .feed div{padding:3px 0;border-bottom:1px solid #1b1f25}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  td,th{padding:4px;border-bottom:1px solid var(--line);text-align:right} td:first-child,th:first-child{text-align:left} th{color:var(--mute);font-weight:500}
+  .note{color:var(--mute);font-size:11px;margin-top:12px;line-height:1.55}
+  .err{color:var(--down);font-size:12px;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="lbl">BTC-USD · Coinbase · live</div>
+      <div class="price num" id="price">—</div>
+      <div class="live"><span class="dot" id="dot"></span><span id="status">Connecting…</span></div>
+    </div>
+    <div class="tgt">
+      <div class="lbl">Target price (optional)</div>
+      <input id="target" placeholder="e.g. 75967" inputmode="decimal" autocomplete="off">
+      <div class="cd" style="margin-top:6px">Each checkpoint shows ABOVE / BELOW with odds.</div>
+    </div>
+  </header>
+
+  <div class="grid" id="cards"></div>
+
+  <div class="row">
+    <div class="card">
+      <div class="hd"><span class="lbl">Last 2 hours · inner = 50%, outer = 90% range to next checkpoint</span><span class="cd" id="chartLbl"></span></div>
+      <canvas id="chart"></canvas>
+    </div>
+    <div class="card">
+      <div class="hd"><span class="lbl">Desk read</span><span id="leanTxt"></span></div>
+      <div class="meter"><i id="meterI" style="left:50%"></i></div>
+      <div class="hd cd" style="margin-bottom:6px"><span>bearish</span><span>bullish</span></div>
+      <div id="cond"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <details id="ntfBox">
+      <summary><span class="lbl">Notifications · phone alerts ▾</span><span class="cd" id="ntfState">off</span></summary>
+      <div class="ntf">
+        <div>
+          <h4>Phone numbers</h4>
+          <div class="phones" id="phones"></div>
+          <button id="addPhone" style="margin-top:6px">+ Add number</button>
+          <h4 style="margin-top:14px">Texts are sent through</h4>
+          <div class="f"><label>SMS webhook URL (Zapier, Make, IFTTT, or your own server)</label><input id="hook" placeholder="https://hooks.zapier.com/hooks/catch/…"></div>
+          <div class="hint">A web page can't send a text by itself. It needs an SMS service. This page sends <span class="num">{"to":["+1…"],"message":"…"}</span> to your webhook. In Zapier: <b>Webhooks → Catch Hook</b>, then <b>SMS by Zapier</b> or <b>Twilio → Send SMS</b>, mapping <i>to</i> and <i>message</i>.</div>
+        </div>
+        <div>
+          <h4>Other channels</h4>
+          <div class="f"><label>ntfy.sh topic (free phone push with no account: install the ntfy app and subscribe to the same topic)</label><input id="ntfy" placeholder="e.g. trill-btc-8k2x"></div>
+          <label class="chk"><input type="checkbox" id="desk"> Desktop notifications</label>
+          <label class="chk"><input type="checkbox" id="sound"> Sound in this tab</label>
+          <h4 style="margin-top:14px">Alert me when</h4>
+          <label class="chk"><input type="checkbox" id="rCp"> Before each checkpoint, send the best band
+            <select id="rCpMin" style="width:64px;padding:4px"><option>2</option><option>3</option><option>5</option><option>10</option></select> min ahead</label>
+          <label class="chk"><input type="checkbox" id="rFlip"> My target call flips (ABOVE ↔ BELOW, next checkpoint)</label>
+          <label class="chk"><input type="checkbox" id="rMove"> Price moves more than <input id="rMoveAmt" style="width:70px;padding:4px"> in 5 min</label>
+          <div class="two" style="margin-top:6px">
+            <div class="f"><label>Price goes above</label><input id="rAbove" placeholder="—" inputmode="decimal"></div>
+            <div class="f"><label>Price goes below</label><input id="rBelow" placeholder="—" inputmode="decimal"></div>
+          </div>
+        </div>
+        <div>
+          <h4>Control</h4>
+          <label class="chk"><input type="checkbox" id="ntfOn"> <b>Notifications on</b></label>
+          <div style="display:flex;gap:8px;margin:8px 0"><button class="pri" id="test">Send test</button><button id="clrFeed">Clear log</button></div>
+          <div class="feed" id="feed"><div class="cd">Sent alerts will appear here.</div></div>
+          <div class="hint" style="margin-top:8px">Alerts only run while this page is open. Keep it in its own window rather than a background tab; browsers slow down timers in hidden tabs.</div>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <details>
+      <summary><span class="lbl">Model track record · is it calibrated? ▾</span><span class="cd" id="scoreTxt">no data yet</span></summary>
+      <table style="margin-top:8px"><thead><tr><th>Checkpoint</th><th>Best band (called 1 min before)</th><th>Odds</th><th>Close</th><th>Hit</th><th>Target call</th></tr></thead><tbody id="log"></tbody></table>
+    </details>
+  </div>
+
+  <div class="note">
+    <b>Method.</b> Volatility blends four estimators: 24h close-to-close, an EWMA (λ = 0.94) of 15-min returns, Garman–Klass on the last 60 one-minute candles, and Parkinson high/low range. That blend is scaled by an hour-of-day seasonality factor from the last ~3 days. Outcomes use a fat-tailed Student-t (ν = 4) rather than a bell curve, because 15-min crypto returns have heavier tails than normal. The center of each band is tilted (capped at ±0.25σ) by a composite of EMA trend, VWAP deviation, 15-min momentum, live taker flow from the trade stream, order-book imbalance within ±0.15%, and RSI mean-reversion at extremes. At 15-minute horizons BTC is mostly noise: the edge is in sizing the range correctly, not in calling direction. The track record shows whether the stated odds hold up. Not financial advice.
+    <div class="err" id="err"></div>
+  </div>
+</div>
+
+<script>
+const REST='https://api.exchange.coinbase.com/products/BTC-USD', WS='wss://ws-feed.exchange.coinbase.com';
+const $=id=>document.getElementById(id);
+const f0=n=>(n<0?'-$':'$')+Math.abs(Math.round(n)).toLocaleString('en-US');
+const f2=n=>'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const sgn=n=>(n>=0?'+':'-')+'$'+Math.abs(Math.round(n)).toLocaleString('en-US');
+const pt=d=>new Date(d).toLocaleTimeString('en-US',{timeZone:'America/Los_Angeles',hour:'numeric',minute:'2-digit'});
+const ptHour=d=>+new Date(d).toLocaleString('en-US',{timeZone:'America/Los_Angeles',hour:'numeric',hour12:false})%24;
+const mmss=s=>{s=Math.max(0,Math.round(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
+const LS={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch{return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}};
+
+/* ================= math ================= */
+const sd=a=>{const m=a.reduce((s,x)=>s+x,0)/a.length;return Math.sqrt(a.reduce((s,x)=>s+(x-m)**2,0)/Math.max(1,a.length-1))};
+const lr=c=>c.slice(1).map((x,i)=>Math.log(x/c[i]));
+const ema=(a,n)=>{const k=2/(n+1);let e=a[0];for(const x of a)e=x*k+e*(1-k);return e};
+// Student-t, nu=4, standardized to unit variance (closed-form CDF)
+const T4=z=>{const t=z*Math.SQRT2,x=t/Math.sqrt(t*t+4);return .5+.75*(x-x*x*x/3)};
+function rsi(a,n=14){let g=0,l=0;for(let i=a.length-n;i<a.length;i++){const d=a[i]-a[i-1];d>0?g+=d:l-=d}return l===0?100:100-100/(1+g/l)}
+
+/* ================= state ================= */
+const S={price:null,prev:null,tickAt:0,c1:[],c15:[],book:null,vol15:null,tilt:0,ind:null,trades:[],hist:[],season:()=>1};
+
+/* ================= live stream ================= */
+let ws,pollT;
+function connect(){
+  try{ws=new WebSocket(WS)}catch{return poll()}
+  ws.onopen=()=>{ws.send(JSON.stringify({type:'subscribe',product_ids:['BTC-USD'],channels:['ticker']}));if(pollT){clearInterval(pollT);pollT=null}};
+  ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='ticker'&&m.price)tick(+m.price,+(m.last_size||0))};
+  ws.onclose=()=>{status(false,'Reconnecting…');poll();setTimeout(connect,3000)};
+  ws.onerror=()=>{try{ws.close()}catch{}};
+}
+function poll(){if(pollT)return;const go=async()=>{try{const t=await j(REST+'/ticker');tick(+t.price,0,true)}catch{}};go();pollT=setInterval(go,2000)}
+let lastSide=0;
+function tick(p,size,polled){
+  const now=Date.now();
+  if(S.price!=null&&size>0){const side=p>S.price?1:p<S.price?-1:lastSide;lastSide=side;S.trades.push([now,side*size])} // tick-rule taker flow
+  S.trades=S.trades.filter(x=>now-x[0]<300000);
+  S.prev=S.price;S.price=p;S.tickAt=now;S.hist.push([now,p]);S.hist=S.hist.filter(x=>now-x[0]<600000);
+  status(true,polled?'Live · polling every 2s':'Live · streaming every trade');
+  const el=$('price');el.textContent=f2(p);
+  if(S.prev!=null&&p!==S.prev){el.style.color=p>S.prev?'var(--up)':'var(--down)';clearTimeout(el._t);el._t=setTimeout(()=>el.style.color='',350)}
+  throttleDraw();checkPriceAlerts();
+}
+function status(on,txt){$('dot').className='dot'+(on?' on':'');$('status').textContent=txt}
+setInterval(()=>{if(S.tickAt&&Date.now()-S.tickAt>15000)status(false,'No trades for '+Math.round((Date.now()-S.tickAt)/1000)+'s…')},5000);
+async function j(u){const r=await fetch(u,{cache:'no-store'});if(!r.ok)throw new Error(r.status);return r.json()}
+
+/* ================= history & model ================= */
+async function loadHist(){
+  try{
+    const [c1,c15,book]=await Promise.all([j(REST+'/candles?granularity=60'),j(REST+'/candles?granularity=900'),j(REST+'/book?level=2').catch(()=>null)]);
+    S.c1=c1.slice().reverse();S.c15=c15.slice().reverse();S.book=book;
+    if(S.price==null){S.price=S.c1[S.c1.length-1][4];$('price').textContent=f2(S.price)}
+    model();draw();scoreLog();$('err').textContent='';
+  }catch(e){$('err').textContent='History fetch failed, retrying. If this keeps happening, open the downloaded file directly in Chrome or Safari.'}
+}
+function model(){
+  const P=S.price,c1=S.c1,c15=S.c15,cl1=c1.map(x=>x[4]),cl15=c15.map(x=>x[4]),r15=lr(cl15);
+  const vCC=sd(r15.slice(-96));                                                     // 24h close-to-close
+  let ew=r15.slice(0,20).reduce((s,x)=>s+x*x,0)/20;for(const r of r15)ew=.94*ew+.06*r*r;const vEW=Math.sqrt(ew); // EWMA
+  const gk=c1.slice(-60).map(([,l,h,o,c])=>.5*Math.log(h/l)**2-(2*Math.LN2-1)*Math.log(c/o)**2);           // Garman–Klass
+  const vGK=Math.sqrt(Math.max(0,gk.reduce((s,x)=>s+x,0)/gk.length)*15);
+  const pk=c15.slice(-32).map(([,l,h])=>Math.log(h/l)**2);const vPK=Math.sqrt(pk.reduce((s,x)=>s+x,0)/(4*Math.LN2*pk.length)); // Parkinson
+  S.vol15=0.2*vCC+0.3*vEW+0.3*vGK+0.2*vPK;
+  const byH={};r15.forEach((r,i)=>{const h=ptHour(c15[i+1][0]*1000);(byH[h]=byH[h]||[]).push(Math.abs(r))});
+  const all=r15.map(Math.abs).reduce((s,x)=>s+x,0)/r15.length;
+  S.season=h=>{const a=byH[h];if(!a||a.length<3)return 1;const m=a.reduce((s,x)=>s+x,0)/a.length;return Math.min(1.6,Math.max(.6,1+.5*(m/all-1)))};
+  const e20=ema(cl1.slice(-120),20),e50=ema(cl1.slice(-160),50);
+  const day=c1.slice(-240);const vw=day.reduce((s,x)=>s+(x[2]+x[1]+x[4])/3*x[5],0)/Math.max(1e-9,day.reduce((s,x)=>s+x[5],0));
+  const mom=Math.log(P/cl1[cl1.length-16]),R=rsi(cl1);
+  let imb=0;if(S.book){const lim=P*.0015;let b=0,a=0;for(const[p,s]of S.book.bids){if(P-p>lim)break;b+=+s}for(const[p,s]of S.book.asks){if(p-P>lim)break;a+=+s}imb=(b-a)/Math.max(1e-9,a+b)}
+  const fl=S.trades.reduce((s,x)=>s+x[1],0),fv=S.trades.reduce((s,x)=>s+Math.abs(x[1]),0),flow=fv>0?fl/fv:0;
+  const v=S.vol15,k=v*.5;
+  const sig={trend:Math.tanh(((e20-e50)/P)/k),vwap:Math.tanh(((P-vw)/P)/(2*v))*.6,mom:Math.tanh(mom/v),flow,book:imb,rsi:R>72?-(R-72)/28:R<28?(28-R)/28:0};
+  const w={trend:.22,vwap:.12,mom:.18,flow:.2,book:.18,rsi:.1};
+  const sc=Object.keys(w).reduce((s,x)=>s+w[x]*sig[x],0);
+  S.tilt=Math.max(-.25,Math.min(.25,sc*.35));
+  const h=c15.slice(-96);
+  S.ind={e20,e50,vw,mom,R,imb,flow,fv,sc,sig,hi:Math.max(...h.map(x=>x[2])),lo:Math.min(...h.map(x=>x[1]))};
+}
+setInterval(()=>{if(S.vol15!=null&&S.c1.length)model()},5000);
+
+/* ================= forecast ================= */
+function checkpoints(){const b=new Date();b.setSeconds(0,0);b.setMinutes(Math.floor(b.getMinutes()/15)*15);return[1,2,3,4].map(i=>b.getTime()+i*900000)}
+function dist(t){
+  const mins=Math.max(.05,(t-Date.now())/60000),s=S.vol15*Math.sqrt(mins/15)*S.season(ptHour(t-450000)),mu=S.tilt*s;
+  const cdf=x=>T4((Math.log(x/S.price)-mu)/s);
+  return{mins,s,mu,cdf,mid:S.price*Math.exp(mu)};
+}
+function bestBand(d){let b=null;for(let lo=Math.floor(d.mid*Math.exp(-2.5*d.s)/50)*50;lo<d.mid*Math.exp(2.5*d.s);lo+=50){const p=d.cdf(lo+100)-d.cdf(lo);if(!b||p>b.p)b={lo,hi:lo+99,p}}return b}
+function ladder(d){const o=[];const lo0=Math.floor(d.mid*Math.exp(-2.6*d.s)/100)*100,hi0=Math.ceil(d.mid*Math.exp(2.6*d.s)/100)*100;
+  for(let lo=hi0-100;lo>=lo0;lo-=100)o.push({lo,hi:lo+99,p:d.cdf(lo+100)-d.cdf(lo)});const k=o.filter(r=>r.p>=.02);return k.length>=2?k:o.slice(0,3)}
+function verdict(d,T){const pa=1-d.cdf(T);return pa>=.55?{c:'up',w:'ABOVE',p:pa}:pa<=.45?{c:'down',w:'BELOW',p:1-pa}:{c:'flat',w:'TOSS-UP',p:Math.max(pa,1-pa)}}
+
+/* ================= render ================= */
+let lastDraw=0,dq;
+function throttleDraw(){const n=Date.now();if(n-lastDraw>600){lastDraw=n;draw()}else{clearTimeout(dq);dq=setTimeout(draw,600)}}
+setInterval(()=>{draw();checkTimedAlerts();snapshot()},1000);
+$('target').value=LS.get('btcTarget','');$('target').addEventListener('input',e=>{LS.set('btcTarget',e.target.value);draw()});
+
+function draw(){
+  if(S.price==null||S.vol15==null)return;
+  const cps=checkpoints(),T=parseFloat($('target').value);
+  $('cards').innerHTML=cps.map((t,i)=>{
+    const d=dist(t),bb=bestBand(d),L=ladder(d),mx=Math.max(...L.map(r=>r.p));
+    const vs=T>0?(()=>{const v=verdict(d,T);return`<div class="vs"><span>vs ${f0(T)}</span><span class="v ${v.c}">${v.w} · ${Math.round(v.p*100)}%</span></div>`})():'';
+    return `<div class="card${i===0?' next':''}">
+      <div class="hd"><b>${pt(t)}</b><span class="cd num">${i===0?'closes in '+mmss((t-Date.now())/1000):'in '+Math.round(d.mins)+' min'}</span></div>
+      <div class="best num">${f0(bb.lo)} – ${f0(bb.hi)}</div>
+      <div class="bestp">best $100 band · <b>${Math.round(bb.p*100)}%</b> · likely ±$${f0(S.price*d.s).slice(1)}</div>
+      <div class="ladder">${L.map(r=>`<div class="rung num${S.price>=r.lo&&S.price<r.hi+1?' cur':''}"><span class="r">${r.lo.toLocaleString()}–${r.hi.toLocaleString()}</span><span class="b"><i style="width:${r.p/mx*100}%"></i></span><span class="p">${Math.round(r.p*100)}%</span></div>`).join('')}</div>
+      ${vs}</div>`}).join('');
+  const I=S.ind,lab=x=>x>.15?'<span class="up">bullish</span>':x<-.15?'<span class="down">bearish</span>':'<span class="flat">neutral</span>';
+  $('meterI').style.left=(50+Math.max(-1,Math.min(1,I.sc*2))*50)+'%';
+  $('leanTxt').innerHTML=I.sc>.12?'<span class="up">Leaning up</span>':I.sc<-.12?'<span class="down">Leaning down</span>':'<span class="flat">No clear edge</span>';
+  $('cond').innerHTML=[
+    ['Typical 15-min move','±$'+f0(S.price*S.vol15).slice(1)+' · '+(S.vol15*1e4).toFixed(1)+' bps',null],
+    ['Trend (EMA20 vs 50)',sgn(I.e20-I.e50),I.sig.trend],
+    ['vs 4h VWAP '+f0(I.vw),sgn(S.price-I.vw),I.sig.vwap],
+    ['15-min momentum',sgn(S.price*I.mom),I.sig.mom],
+    ['Taker flow (5 min)',I.fv?Math.abs(Math.round(I.flow*100))+'% net '+(I.flow>=0?'buying':'selling'):'warming up',I.sig.flow],
+    ['Order book ±0.15%',S.book?Math.abs(Math.round(I.imb*100))+'% '+(I.imb>=0?'bid':'ask')+'-heavy':'n/a',I.sig.book],
+    ['RSI 14 (1m)',I.R.toFixed(0)+(I.R>72?' overbought':I.R<28?' oversold':''),I.sig.rsi],
+    ['24h range',f0(I.lo)+' – '+f0(I.hi),null]
+  ].map(r=>`<div class="kv"><span>${r[0]}</span><span class="num">${r[1]}${r[2]==null?'':' · '+lab(r[2])}</span></div>`).join('');
+  chart(cps[0]);
+}
+
+function chart(t){
+  const cv=$('chart'),dpr=devicePixelRatio||1,W=cv.clientWidth,H=cv.clientHeight;if(!W)return;
+  cv.width=W*dpr;cv.height=H*dpr;const g=cv.getContext('2d');g.scale(dpr,dpr);
+  const now=Date.now(),pts=S.c1.slice(-120).map(x=>[x[0]*1000,x[4]]);pts.push([now,S.price]);
+  const d=dist(t),T=parseFloat($('target').value);
+  const k90=1.53,k50=.53; // unit-variance t4 quantiles
+  const t0=pts[0][0],t1=t+90000;
+  const ys=pts.map(p=>p[1]).concat([d.mid*Math.exp(k90*d.s),d.mid*Math.exp(-k90*d.s)]);if(T>0)ys.push(T);
+  let lo=Math.floor(Math.min(...ys)/50)*50,hi=Math.ceil(Math.max(...ys)/50)*50;
+  const X=v=>58+(v-t0)/(t1-t0)*(W-68),Y=v=>8+(hi-v)/(hi-lo)*(H-28);
+  g.font='11px -apple-system,sans-serif';
+  const step=(hi-lo)>700?200:(hi-lo)>300?100:50;
+  for(let v=Math.ceil(lo/step)*step;v<=hi;v+=step){g.strokeStyle=v%100===0?'#262b34':'#1a1e24';g.beginPath();g.moveTo(58,Y(v));g.lineTo(W-10,Y(v));g.stroke();g.fillStyle='#8a92a0';g.fillText(v.toLocaleString(),2,Y(v)+4)}
+  for(let m=Math.ceil(t0/900000)*900000;m<=t1;m+=900000){g.strokeStyle='#1d2128';g.beginPath();g.moveTo(X(m),8);g.lineTo(X(m),H-20);g.stroke();g.fillStyle='#8a92a0';g.fillText(pt(m),X(m)-18,H-5)}
+  const xn=X(now),xe=X(t);
+  [[k90,'rgba(247,147,26,.09)'],[k50,'rgba(247,147,26,.24)']].forEach(([k,c])=>{g.fillStyle=c;g.beginPath();g.moveTo(xn,Y(S.price));g.lineTo(xe,Y(d.mid*Math.exp(k*d.s)));g.lineTo(xe,Y(d.mid*Math.exp(-k*d.s)));g.closePath();g.fill()});
+  if(T>0){g.setLineDash([5,4]);g.strokeStyle='#eceef2';g.beginPath();g.moveTo(58,Y(T));g.lineTo(W-10,Y(T));g.stroke();g.setLineDash([]);g.fillStyle='#eceef2';g.fillText('target '+Math.round(T).toLocaleString(),W-120,Y(T)-5)}
+  g.strokeStyle='#f7931a';g.lineWidth=1.8;g.beginPath();pts.forEach((p,i)=>i?g.lineTo(X(p[0]),Y(p[1])):g.moveTo(X(p[0]),Y(p[1])));g.stroke();g.lineWidth=1;
+  g.fillStyle='#f7931a';g.beginPath();g.arc(xn,Y(S.price),4,0,7);g.fill();
+  $('chartLbl').textContent='to '+pt(t);
+}
+
+/* ================= notifications ================= */
+const NT={phones:LS.get('n_phones',['']),hook:LS.get('n_hook',''),ntfy:LS.get('n_ntfy',''),desk:LS.get('n_desk',false),sound:LS.get('n_sound',true),
+  rCp:LS.get('n_rCp',true),rCpMin:LS.get('n_rCpMin','5'),rFlip:LS.get('n_rFlip',true),rMove:LS.get('n_rMove',false),rMoveAmt:LS.get('n_rMoveAmt','150'),
+  rAbove:LS.get('n_rAbove',''),rBelow:LS.get('n_rBelow',''),on:LS.get('n_on',false)};
+const save=()=>Object.keys(NT).forEach(k=>LS.set('n_'+k,NT[k]));
+const armed={above:true,below:true};
+function renderPhones(){
+  $('phones').innerHTML=NT.phones.map((p,i)=>`<div class="ph"><input class="phn" data-i="${i}" placeholder="+1 555 123 4567" inputmode="tel"><button class="rm" data-i="${i}" title="Remove">×</button></div>`).join('');
+  document.querySelectorAll('.phn').forEach(el=>{el.value=NT.phones[+el.dataset.i]||'';el.oninput=e=>{NT.phones[+e.target.dataset.i]=e.target.value;save()}});
+  document.querySelectorAll('.rm').forEach(el=>el.onclick=e=>{NT.phones.splice(+e.target.dataset.i,1);if(!NT.phones.length)NT.phones=[''];save();renderPhones()});
+}
+renderPhones();$('addPhone').onclick=()=>{NT.phones.push('');save();renderPhones()};
+['hook','ntfy','rCpMin','rMoveAmt','rAbove','rBelow'].forEach(k=>{$(k).value=NT[k];$(k).oninput=$(k).onchange=e=>{NT[k]=e.target.value;if(k==='rAbove')armed.above=true;if(k==='rBelow')armed.below=true;save()}});
+['desk','sound','rCp','rFlip','rMove'].forEach(k=>{$(k).checked=NT[k];$(k).onchange=e=>{NT[k]=e.target.checked;save();if(k==='desk'&&NT.desk)askDesk()}});
+$('ntfOn').checked=NT.on;$('ntfOn').onchange=e=>{NT.on=e.target.checked;save();ntfState()};
+function ntfState(){const ch=[],ph=NT.phones.filter(p=>p.trim()).length;if(ph)ch.push(ph+' phone'+(ph>1?'s':'')+(NT.hook?'':' (needs webhook)'));if(NT.ntfy)ch.push('ntfy');if(NT.desk)ch.push('desktop');if(NT.sound)ch.push('sound');
+  $('ntfState').innerHTML=NT.on?`<span class="up">on</span> · ${ch.join(', ')||'no channels set'}`:'off'}
+ntfState();setInterval(ntfState,3000);
+function askDesk(){try{Notification.requestPermission()}catch{}}
+const toE164=p=>{const d=p.replace(/[^\d+]/g,'');return d.startsWith('+')?d:(d.length===10?'+1'+d:'+'+d)};
+let actx;function beep(){try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();const o=actx.createOscillator(),g=actx.createGain();o.frequency.value=880;g.gain.setValueAtTime(.15,actx.currentTime);g.gain.exponentialRampToValueAtTime(.001,actx.currentTime+.35);o.connect(g).connect(actx.destination);o.start();o.stop(actx.currentTime+.35)}catch{}}
+function feed(msg,ch){const f=$('feed');if(f.firstElementChild&&f.firstElementChild.className==='cd')f.innerHTML='';const el=document.createElement('div');el.innerHTML=`<span class="cd">${pt(Date.now())}</span> ${msg} <span class="cd">→ ${ch.join(', ')||'no channel configured'}</span>`;f.prepend(el)}
+async function notify(msg,force){
+  if(!NT.on&&!force)return;const sent=[];
+  const phones=NT.phones.map(p=>p.trim()).filter(Boolean).map(toE164);
+  if(phones.length&&NT.hook){try{await fetch(NT.hook,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify({to:phones,message:msg})});sent.push('SMS ×'+phones.length)}catch{sent.push('SMS failed')}}
+  else if(phones.length)sent.push('SMS skipped: add a webhook');
+  if(NT.ntfy){try{await fetch('https://ntfy.sh/'+encodeURIComponent(NT.ntfy.trim()),{method:'POST',body:msg,headers:{Title:'BTC alert'}});sent.push('ntfy')}catch{sent.push('ntfy failed')}}
+  if(NT.desk){try{if(Notification.permission==='granted'){new Notification('BTC alert',{body:msg});sent.push('desktop')}else sent.push('desktop not permitted')}catch{}}
+  if(NT.sound){beep();sent.push('sound')}
+  feed(msg,sent);
+}
+$('test').onclick=()=>{if(NT.desk)askDesk();if(S.vol15==null)return notify('TEST · BTC analyzer connected',true);const t=checkpoints()[0];notify('TEST · '+cpMsg(t),true)};
+$('clrFeed').onclick=()=>$('feed').innerHTML='<div class="cd">Sent alerts will appear here.</div>';
+
+const sentCp=new Set();let lastFlip=null,lastMoveAt=0;
+function cpMsg(t){const d=dist(t),bb=bestBand(d),T=parseFloat($('target').value);let m=`BTC ${f0(S.price)} · ${pt(t)} best band ${f0(bb.lo)}–${f0(bb.hi)} (${Math.round(bb.p*100)}%)`;if(T>0){const v=verdict(d,T);m+=` · vs ${f0(T)}: ${v.w} ${Math.round(v.p*100)}%`}return m}
+function checkTimedAlerts(){
+  if(S.price==null||S.vol15==null)return;const t=checkpoints()[0],left=(t-Date.now())/1000,lead=+NT.rCpMin*60;
+  if(NT.rCp&&left<=lead&&left>lead-45&&!sentCp.has(t)){sentCp.add(t);notify(cpMsg(t))}
+  const T=parseFloat($('target').value);
+  if(NT.rFlip&&T>0){const v=verdict(dist(t),T).w;if(v!=='TOSS-UP'){if(lastFlip&&lastFlip.t===t&&lastFlip.w!==v)notify(`Target call flipped → ${v} ${f0(T)} for ${pt(t)} · BTC ${f0(S.price)}`);lastFlip={t,w:v}}}
+}
+function checkPriceAlerts(){
+  const A=parseFloat(NT.rAbove),B=parseFloat(NT.rBelow),P=S.price;
+  if(A>0){if(armed.above&&P>=A){armed.above=false;notify(`BTC crossed ABOVE ${f0(A)} · now ${f2(P)}`)}else if(P<A-25)armed.above=true}
+  if(B>0){if(armed.below&&P<=B){armed.below=false;notify(`BTC crossed BELOW ${f0(B)} · now ${f2(P)}`)}else if(P>B+25)armed.below=true}
+  if(NT.rMove&&Date.now()-lastMoveAt>300000){const old=S.hist.find(x=>Date.now()-x[0]<=300000),amt=+NT.rMoveAmt||150;
+    if(old&&Math.abs(P-old[1])>=amt){lastMoveAt=Date.now();notify(`BTC moved ${sgn(P-old[1])} in 5 min · now ${f2(P)}`)}}
+}
+
+/* ================= track record ================= */
+let log=LS.get('btcLog2',[]);
+function snapshot(){
+  if(S.price==null||S.vol15==null)return;const t=checkpoints()[0],left=(t-Date.now())/1000;
+  if(left<=60&&left>40&&!log.find(e=>e.t===t)){const d=dist(t),bb=bestBand(d),T=parseFloat($('target').value);
+    log.unshift({t,lo:bb.lo,hi:bb.hi,p:bb.p,T:T>0?T:null,pa:T>0?1-d.cdf(T):null});log=log.slice(0,300);LS.set('btcLog2',log)}
+}
+function scoreLog(){
+  let ch=false;for(const e of log){if(e.close==null&&Date.now()>e.t+20000){const c=S.c1.find(x=>x[0]===e.t/1000-60);if(c){e.close=c[4];ch=true}}}
+  if(ch)LS.set('btcLog2',log);
+  $('log').innerHTML=log.slice(0,25).map(e=>{const done=e.close!=null,hit=done&&e.close>=e.lo&&e.close<e.hi+1;
+    const tc=e.T?`${e.pa>=.5?'ABOVE':'BELOW'} ${f0(e.T)} ${done?((e.close>e.T)===(e.pa>=.5)?'<span class="up">✓</span>':'<span class="down">✗</span>'):''}`:'—';
+    return`<tr><td>${pt(e.t)}</td><td class="num">${f0(e.lo)}–${f0(e.hi)}</td><td>${Math.round(e.p*100)}%</td><td class="num">${done?f2(e.close):'…'}</td><td>${done?(hit?'<span class="up">✓</span>':'<span class="down">✗</span>'):'pending'}</td><td>${tc}</td></tr>`}).join('')||'<tr><td colspan="6" class="cd">Keep the page open. Calls are logged 1 minute before each checkpoint.</td></tr>';
+  const d=log.filter(e=>e.close!=null);
+  if(d.length){const h=d.filter(e=>e.close>=e.lo&&e.close<e.hi+1).length,exp=d.reduce((s,e)=>s+e.p,0);
+    $('scoreTxt').textContent=`band hit ${h}/${d.length} (${Math.round(h/d.length*100)}%) vs model expected ${Math.round(exp/d.length*100)}%`}
+}
+
+connect();loadHist();setInterval(loadHist,20000);
+addEventListener('resize',draw);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadHist()});
+</script>
+</body>
+</html>
