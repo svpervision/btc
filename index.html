@@ -76,14 +76,22 @@
 <div class="wrap">
   <header>
     <div>
-      <div class="lbl">BTC-USD · Coinbase · live</div>
+      <div class="lbl">BTC · Kalshi-style index (BRTI proxy) · live</div>
       <div class="price num" id="price">—</div>
       <div class="live"><span class="dot" id="dot"></span><span id="status">Connecting…</span></div>
+      <div class="cd num" id="avg60" style="margin-top:4px"></div>
+      <div class="cd num" id="srcs" style="margin-top:2px"></div>
     </div>
     <div class="tgt">
       <div class="lbl">Target price (optional)</div>
       <input id="target" placeholder="e.g. 75967" inputmode="decimal" autocomplete="off">
-      <div class="cd" style="margin-top:6px">Each checkpoint shows ABOVE / BELOW with odds.</div>
+      <div class="cd" style="margin-top:6px">Use Kalshi's "target" here. Each checkpoint shows ABOVE / BELOW with odds.</div>
+      <div class="lbl" style="margin-top:12px">Sync to Kalshi "Now" price</div>
+      <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;margin-top:6px">
+        <input id="kNow" placeholder="e.g. 75577.67" inputmode="decimal" autocomplete="off">
+        <button class="pri" id="kSync">Sync</button><button id="kReset" title="Remove offset">Reset</button>
+      </div>
+      <div class="cd num" id="kInfo" style="margin-top:6px">Not synced. Showing the raw multi-exchange median.</div>
     </div>
   </header>
 
@@ -143,12 +151,12 @@
   <div class="card" style="margin-top:12px">
     <details>
       <summary><span class="lbl">Model track record · is it calibrated? ▾</span><span class="cd" id="scoreTxt">no data yet</span></summary>
-      <table style="margin-top:8px"><thead><tr><th>Checkpoint</th><th>Best band (called 1 min before)</th><th>Odds</th><th>Close</th><th>Hit</th><th>Target call</th></tr></thead><tbody id="log"></tbody></table>
+      <table style="margin-top:8px"><thead><tr><th>Checkpoint</th><th>Best band (called 1 min before)</th><th>Odds</th><th>60s avg</th><th>Hit</th><th>Target call</th></tr></thead><tbody id="log"></tbody></table>
     </details>
   </div>
 
   <div class="note">
-    <b>Method.</b> Volatility blends four estimators: 24h close-to-close, an EWMA (λ = 0.94) of 15-min returns, Garman–Klass on the last 60 one-minute candles, and Parkinson high/low range. That blend is scaled by an hour-of-day seasonality factor from the last ~3 days. Outcomes use a fat-tailed Student-t (ν = 4) rather than a bell curve, because 15-min crypto returns have heavier tails than normal. The center of each band is tilted (capped at ±0.25σ) by a composite of EMA trend, VWAP deviation, 15-min momentum, live taker flow from the trade stream, order-book imbalance within ±0.15%, and RSI mean-reversion at extremes. At 15-minute horizons BTC is mostly noise: the edge is in sizing the range correctly, not in calling direction. The track record shows whether the stated odds hold up. Not financial advice.
+    <b>Price source.</b> Kalshi settles BTC markets on the CF Benchmarks Real-Time Index (BRTI), averaged over the 60 seconds before each checkpoint. BRTI itself requires a paid license, so this page tracks a stand-in: the median of Coinbase, Kraken, Gemini and Crypto.com mid-prices, streamed tick-by-tick from Coinbase with the cross-exchange offset applied. Expect it to sit within a few dollars of Kalshi's number, not match it to the cent. Bands forecast that 60-second average, not the last trade. <b>Method.</b> Volatility blends four estimators: 24h close-to-close, an EWMA (λ = 0.94) of 15-min returns, Garman–Klass on the last 60 one-minute candles, and Parkinson high/low range. That blend is scaled by an hour-of-day seasonality factor from the last ~3 days. Outcomes use a fat-tailed Student-t (ν = 4) rather than a bell curve, because 15-min crypto returns have heavier tails than normal. The center of each band is tilted (capped at ±0.25σ) by a composite of EMA trend, VWAP deviation, 15-min momentum, live taker flow from the trade stream, order-book imbalance within ±0.15%, and RSI mean-reversion at extremes. At 15-minute horizons BTC is mostly noise: the edge is in sizing the range correctly, not in calling direction. The track record shows whether the stated odds hold up. Not financial advice.
     <div class="err" id="err"></div>
   </div>
 </div>
@@ -173,7 +181,7 @@ const T4=z=>{const t=z*Math.SQRT2,x=t/Math.sqrt(t*t+4);return .5+.75*(x-x*x*x/3)
 function rsi(a,n=14){let g=0,l=0;for(let i=a.length-n;i<a.length;i++){const d=a[i]-a[i-1];d>0?g+=d:l-=d}return l===0?100:100-100/(1+g/l)}
 
 /* ================= state ================= */
-const S={price:null,prev:null,tickAt:0,c1:[],c15:[],book:null,vol15:null,tilt:0,ind:null,trades:[],hist:[],season:()=>1};
+const S={price:null,prev:null,tickAt:0,c1:[],c15:[],book:null,vol15:null,tilt:0,ind:null,trades:[],hist:[],season:()=>1,cb:null,basis:0,ex:{},sec:[],kOff:LS.get('kOff',0)};
 
 /* ================= live stream ================= */
 let ws,pollT;
@@ -186,9 +194,10 @@ function connect(){
 }
 function poll(){if(pollT)return;const go=async()=>{try{const t=await j(REST+'/ticker');tick(+t.price,0,true)}catch{}};go();pollT=setInterval(go,2000)}
 let lastSide=0;
-function tick(p,size,polled){
+function tick(cbp,size,polled){
   const now=Date.now();
-  if(S.price!=null&&size>0){const side=p>S.price?1:p<S.price?-1:lastSide;lastSide=side;S.trades.push([now,side*size])} // tick-rule taker flow
+  if(S.cb!=null&&size>0){const side=cbp>S.cb?1:cbp<S.cb?-1:lastSide;lastSide=side;S.trades.push([now,side*size])} // tick-rule taker flow
+  S.cb=cbp;const p=cbp+S.basis+S.kOff;
   S.trades=S.trades.filter(x=>now-x[0]<300000);
   S.prev=S.price;S.price=p;S.tickAt=now;S.hist.push([now,p]);S.hist=S.hist.filter(x=>now-x[0]<600000);
   status(true,polled?'Live · polling every 2s':'Live · streaming every trade');
@@ -200,12 +209,39 @@ function status(on,txt){$('dot').className='dot'+(on?' on':'');$('status').textC
 setInterval(()=>{if(S.tickAt&&Date.now()-S.tickAt>15000)status(false,'No trades for '+Math.round((Date.now()-S.tickAt)/1000)+'s…')},5000);
 async function j(u){const r=await fetch(u,{cache:'no-store'});if(!r.ok)throw new Error(r.status);return r.json()}
 
+/* ================= multi-exchange composite (BRTI proxy) ================= */
+const EX={
+  Kraken:['https://api.kraken.com/0/public/Ticker?pair=XBTUSD',j=>{const r=Object.values(j.result)[0];return(+r.a[0]+ +r.b[0])/2}],
+  Gemini:['https://api.gemini.com/v1/pubticker/btcusd',j=>(+j.bid+ +j.ask)/2],
+  'Crypto.com':['https://api.crypto.com/exchange/v1/public/get-tickers?instrument_name=BTC_USD',j=>{const d=j.result.data[0];return(+d.b+ +d.k)/2}]
+};
+async function pollEx(){
+  await Promise.all(Object.entries(EX).map(async([k,[u,f]])=>{try{const v=f(await j(u));if(v>0)S.ex[k]={v,t:Date.now()}}catch{}}));
+  if(S.cb==null)return;
+  const fresh=Object.values(S.ex).filter(x=>Date.now()-x.t<15000).map(x=>x.v);
+  const all=fresh.concat([S.cb]).sort((a,b)=>a-b);
+  const med=all.length%2?all[(all.length-1)/2]:(all[all.length/2-1]+all[all.length/2])/2; // median resists one bad venue
+  const target=med-S.cb;S.basis=S.basis===0?target:S.basis*.7+target*.3;
+  $('srcs').textContent='Coinbase '+f2(S.cb)+' · '+Object.entries(S.ex).map(([k,x])=>k+' '+f2(x.v)).join(' · ');
+}
+pollEx();setInterval(pollEx,2000);
+// Kalshi's "Now" is a 60-second average of BRTI, so we compare it with our own 60s average.
+function kInfo(){$('kInfo').textContent=S.kOff?`Synced: offset ${S.kOff>=0?'+':''}${S.kOff.toFixed(2)} applied. Re-sync any time it drifts.`:'Not synced. Showing the raw multi-exchange median.'}
+kInfo();
+$('kSync').onclick=()=>{const k=parseFloat($('kNow').value);if(!(k>0)||S.price==null)return;const n=Date.now(),w=S.sec.filter(x=>n-x[0]<60000);
+  const ours=w.length>10?w.reduce((s,x)=>s+x[1],0)/w.length:S.price;const d=k-ours;S.kOff+=d;LS.set('kOff',S.kOff);
+  S.sec=S.sec.map(x=>[x[0],x[1]+d]);S.price+=d;$('price').textContent=f2(S.price);$('kNow').value='';kInfo();draw()};
+$('kReset').onclick=()=>{S.sec=S.sec.map(x=>[x[0],x[1]-S.kOff]);if(S.price!=null)S.price-=S.kOff;S.kOff=0;LS.set('kOff',0);kInfo();draw()};
+setInterval(()=>{if(S.price==null)return;const n=Date.now();S.sec.push([n,S.price]);S.sec=S.sec.filter(x=>n-x[0]<180000);
+  const w=S.sec.filter(x=>n-x[0]<60000);if(w.length>5)$('avg60').textContent='60-sec average (how Kalshi settles): '+f2(w.reduce((s,x)=>s+x[1],0)/w.length)},1000);
+const avgBetween=(a,b)=>{const w=S.sec.filter(x=>x[0]>=a&&x[0]<b);return w.length?{m:w.reduce((s,x)=>s+x[1],0)/w.length,n:w.length}:null};
+
 /* ================= history & model ================= */
 async function loadHist(){
   try{
     const [c1,c15,book]=await Promise.all([j(REST+'/candles?granularity=60'),j(REST+'/candles?granularity=900'),j(REST+'/book?level=2').catch(()=>null)]);
     S.c1=c1.slice().reverse();S.c15=c15.slice().reverse();S.book=book;
-    if(S.price==null){S.price=S.c1[S.c1.length-1][4];$('price').textContent=f2(S.price)}
+    if(S.price==null){S.cb=S.c1[S.c1.length-1][4];S.price=S.cb+S.basis+S.kOff;$('price').textContent=f2(S.price)}
     model();draw();scoreLog();$('err').textContent='';
   }catch(e){$('err').textContent='History fetch failed, retrying. If this keeps happening, open the downloaded file directly in Chrome or Safari.'}
 }
@@ -237,10 +273,19 @@ setInterval(()=>{if(S.vol15!=null&&S.c1.length)model()},5000);
 
 /* ================= forecast ================= */
 function checkpoints(){const b=new Date();b.setSeconds(0,0);b.setMinutes(Math.floor(b.getMinutes()/15)*15);return[1,2,3,4].map(i=>b.getTime()+i*900000)}
+// Forecasts the settlement value = simple average of the index over the 60s before t.
 function dist(t){
-  const mins=Math.max(.05,(t-Date.now())/60000),s=S.vol15*Math.sqrt(mins/15)*S.season(ptHour(t-450000)),mu=S.tilt*s;
-  const cdf=x=>T4((Math.log(x/S.price)-mu)/s);
-  return{mins,s,mu,cdf,mid:S.price*Math.exp(mu)};
+  const now=Date.now(),mins=Math.max(0,(t-now)/60000),sm=S.vol15/Math.sqrt(15)*S.season(ptHour(t-450000)); // per-minute log sd
+  let mid,s;
+  if(mins>1){ // whole averaging window still ahead: var = to-window-start + window/3
+    s=sm*Math.sqrt((mins-1)+1/3);const mu=S.tilt*s;mid=S.price*Math.exp(mu);
+  }else{      // inside the final minute: part of the average is already locked in
+    const r=mins*60,k=60-r,got=avgBetween(t-60000,now);
+    const known=got?got.m:S.price,kk=got?Math.min(k,got.n):0;
+    const sf=sm*Math.sqrt(r/60/3);mid=(kk*known+r*S.price)/(kk+r||1);s=Math.max(1e-6,sf*r/(kk+r||1));
+  }
+  const cdf=x=>T4(Math.log(x/mid)/s);
+  return{mins:Math.max(.05,mins),s,cdf,mid};
 }
 function bestBand(d){let b=null;for(let lo=Math.floor(d.mid*Math.exp(-2.5*d.s)/50)*50;lo<d.mid*Math.exp(2.5*d.s);lo+=50){const p=d.cdf(lo+100)-d.cdf(lo);if(!b||p>b.p)b={lo,hi:lo+99,p}}return b}
 function ladder(d){const o=[];const lo0=Math.floor(d.mid*Math.exp(-2.6*d.s)/100)*100,hi0=Math.ceil(d.mid*Math.exp(2.6*d.s)/100)*100;
@@ -260,7 +305,7 @@ function draw(){
     const d=dist(t),bb=bestBand(d),L=ladder(d),mx=Math.max(...L.map(r=>r.p));
     const vs=T>0?(()=>{const v=verdict(d,T);return`<div class="vs"><span>vs ${f0(T)}</span><span class="v ${v.c}">${v.w} · ${Math.round(v.p*100)}%</span></div>`})():'';
     return `<div class="card${i===0?' next':''}">
-      <div class="hd"><b>${pt(t)}</b><span class="cd num">${i===0?'closes in '+mmss((t-Date.now())/1000):'in '+Math.round(d.mins)+' min'}</span></div>
+      <div class="hd"><b>${pt(t)}</b><span class="cd num">${i===0?'settles in '+mmss((t-Date.now())/1000):'in '+Math.round(d.mins)+' min'}</span></div>
       <div class="best num">${f0(bb.lo)} – ${f0(bb.hi)}</div>
       <div class="bestp">best $100 band · <b>${Math.round(bb.p*100)}%</b> · likely ±$${f0(S.price*d.s).slice(1)}</div>
       <div class="ladder">${L.map(r=>`<div class="rung num${S.price>=r.lo&&S.price<r.hi+1?' cur':''}"><span class="r">${r.lo.toLocaleString()}–${r.hi.toLocaleString()}</span><span class="b"><i style="width:${r.p/mx*100}%"></i></span><span class="p">${Math.round(r.p*100)}%</span></div>`).join('')}</div>
@@ -284,7 +329,7 @@ function draw(){
 function chart(t){
   const cv=$('chart'),dpr=devicePixelRatio||1,W=cv.clientWidth,H=cv.clientHeight;if(!W)return;
   cv.width=W*dpr;cv.height=H*dpr;const g=cv.getContext('2d');g.scale(dpr,dpr);
-  const now=Date.now(),pts=S.c1.slice(-120).map(x=>[x[0]*1000,x[4]]);pts.push([now,S.price]);
+  const now=Date.now(),pts=S.c1.slice(-120).map(x=>[x[0]*1000,x[4]+S.basis+S.kOff]);pts.push([now,S.price]);
   const d=dist(t),T=parseFloat($('target').value);
   const k90=1.53,k50=.53; // unit-variance t4 quantiles
   const t0=pts[0][0],t1=t+90000;
@@ -362,7 +407,7 @@ function snapshot(){
     log.unshift({t,lo:bb.lo,hi:bb.hi,p:bb.p,T:T>0?T:null,pa:T>0?1-d.cdf(T):null});log=log.slice(0,300);LS.set('btcLog2',log)}
 }
 function scoreLog(){
-  let ch=false;for(const e of log){if(e.close==null&&Date.now()>e.t+20000){const c=S.c1.find(x=>x[0]===e.t/1000-60);if(c){e.close=c[4];ch=true}}}
+  let ch=false;for(const e of log){if(e.close==null&&Date.now()>e.t+5000){const a=avgBetween(e.t-60000,e.t);if(a&&a.n>=40){e.close=a.m;ch=true}else if(Date.now()>e.t+20000){const c=S.c1.find(x=>x[0]===e.t/1000-60);if(c){e.close=(c[3]+c[4])/2+S.basis+S.kOff;ch=true}}}}
   if(ch)LS.set('btcLog2',log);
   $('log').innerHTML=log.slice(0,25).map(e=>{const done=e.close!=null,hit=done&&e.close>=e.lo&&e.close<e.hi+1;
     const tc=e.T?`${e.pa>=.5?'ABOVE':'BELOW'} ${f0(e.T)} ${done?((e.close>e.T)===(e.pa>=.5)?'<span class="up">✓</span>':'<span class="down">✗</span>'):''}`:'—';
