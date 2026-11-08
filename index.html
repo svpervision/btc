@@ -84,8 +84,12 @@
     </div>
     <div class="tgt">
       <div class="lbl">Target price (optional)</div>
-      <input id="target" placeholder="e.g. 75967" inputmode="decimal" autocomplete="off">
-      <div class="cd" style="margin-top:6px">Use Kalshi's "target" here. Each checkpoint shows ABOVE / BELOW with odds.</div>
+      <form id="tForm" style="display:grid;grid-template-columns:1fr auto;gap:6px;margin-top:6px">
+        <input id="target" placeholder="e.g. 75588.42" inputmode="decimal" enterkeyhint="done" autocomplete="off" style="margin-top:0">
+        <button class="pri" type="submit">Set</button>
+      </form>
+      <div class="cd num" id="tInfo" style="margin-top:6px"></div>
+      <div class="cd" style="margin-top:4px">Enter Kalshi's target for the current window. It applies to the next checkpoint and clears once that window settles.</div>
       <div class="lbl" style="margin-top:12px">Sync to Kalshi "Now" price</div>
       <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;margin-top:6px">
         <input id="kNow" placeholder="e.g. 75577.67" inputmode="decimal" autocomplete="off">
@@ -103,10 +107,11 @@
       <canvas id="chart"></canvas>
     </div>
     <div class="card">
-      <div class="hd"><span class="lbl">Desk read</span><span id="leanTxt"></span></div>
+      <div class="hd"><span class="lbl">Short-term signals · context only</span><span id="leanTxt"></span></div>
       <div class="meter"><i id="meterI" style="left:50%"></i></div>
       <div class="hd cd" style="margin-bottom:6px"><span>bearish</span><span>bullish</span></div>
       <div id="cond"></div>
+      <div class="cd" style="margin-top:8px;line-height:1.5">In a 30-hour backtest these signals called the next 15 minutes' direction about 50% of the time, no better than a coin flip, so they don't move the bands. Above/below odds come only from how far the price is from your target and how much time is left.</div>
     </div>
   </div>
 
@@ -156,7 +161,7 @@
   </div>
 
   <div class="note">
-    <b>Price source.</b> Kalshi settles BTC markets on the CF Benchmarks Real-Time Index (BRTI), averaged over the 60 seconds before each checkpoint. BRTI itself requires a paid license, so this page tracks a stand-in: the median of Coinbase, Kraken, Gemini and Crypto.com mid-prices, streamed tick-by-tick from Coinbase with the cross-exchange offset applied. Expect it to sit within a few dollars of Kalshi's number, not match it to the cent. Bands forecast that 60-second average, not the last trade. <b>Method.</b> Volatility blends four estimators: 24h close-to-close, an EWMA (λ = 0.94) of 15-min returns, Garman–Klass on the last 60 one-minute candles, and Parkinson high/low range. That blend is scaled by an hour-of-day seasonality factor from the last ~3 days. Outcomes use a fat-tailed Student-t (ν = 4) rather than a bell curve, because 15-min crypto returns have heavier tails than normal. The center of each band is tilted (capped at ±0.25σ) by a composite of EMA trend, VWAP deviation, 15-min momentum, live taker flow from the trade stream, order-book imbalance within ±0.15%, and RSI mean-reversion at extremes. At 15-minute horizons BTC is mostly noise: the edge is in sizing the range correctly, not in calling direction. The track record shows whether the stated odds hold up. Not financial advice.
+    <b>Price source.</b> Kalshi settles BTC markets on the CF Benchmarks Real-Time Index (BRTI), averaged over the 60 seconds before each checkpoint. BRTI itself requires a paid license, so this page tracks a stand-in: the median of Coinbase, Kraken, Gemini and Crypto.com mid-prices, streamed tick-by-tick from Coinbase with the cross-exchange offset applied. Expect it to sit within a few dollars of Kalshi's number, not match it to the cent. Bands forecast that 60-second average, not the last trade. <b>Method.</b> Volatility blends four estimators: 24h close-to-close, an EWMA (λ = 0.94) of 15-min returns, Garman–Klass on the last 60 one-minute candles, and Parkinson high/low range. That blend is scaled by an hour-of-day seasonality factor from the last ~3 days. Outcomes use a fat-tailed Student-t (ν = 4) rather than a bell curve, because 15-min crypto returns have heavier tails than normal. Bands are centered on the current price with no directional tilt: in backtests, trend, momentum and mean-reversion signals all called 15-minute direction about 50% of the time, while the volatility bands were well calibrated (best $100 band hit 76% vs 73% predicted; 90% range hit 91%). At 15-minute horizons BTC is mostly noise: the edge is in sizing the range correctly, not in calling direction. The track record shows whether the stated odds hold up. Not financial advice.
     <div class="err" id="err"></div>
   </div>
 </div>
@@ -265,7 +270,7 @@ function model(){
   const sig={trend:Math.tanh(((e20-e50)/P)/k),vwap:Math.tanh(((P-vw)/P)/(2*v))*.6,mom:Math.tanh(mom/v),flow,book:imb,rsi:R>72?-(R-72)/28:R<28?(28-R)/28:0};
   const w={trend:.22,vwap:.12,mom:.18,flow:.2,book:.18,rsi:.1};
   const sc=Object.keys(w).reduce((s,x)=>s+w[x]*sig[x],0);
-  S.tilt=Math.max(-.25,Math.min(.25,sc*.35));
+  S.tilt=0; // signals shown for context only: 30h backtest = ~50% directional accuracy
   const h=c15.slice(-96);
   S.ind={e20,e50,vw,mom,R,imb,flow,fv,sc,sig,hi:Math.max(...h.map(x=>x[2])),lo:Math.min(...h.map(x=>x[1]))};
 }
@@ -296,14 +301,21 @@ function verdict(d,T){const pa=1-d.cdf(T);return pa>=.55?{c:'up',w:'ABOVE',p:pa}
 let lastDraw=0,dq;
 function throttleDraw(){const n=Date.now();if(n-lastDraw>600){lastDraw=n;draw()}else{clearTimeout(dq);dq=setTimeout(draw,600)}}
 setInterval(()=>{draw();checkTimedAlerts();snapshot()},1000);
-$('target').value=LS.get('btcTarget','');$('target').addEventListener('input',e=>{LS.set('btcTarget',e.target.value);draw()});
+let TG=LS.get('btcTG',null); // {v, t}: target value bound to one checkpoint
+const tgtFor=t=>TG&&TG.t===t?TG.v:NaN;
+function tInfo(){const nx=checkpoints()[0];if(TG&&TG.t<nx-1){TG=null;LS.set('btcTG',null)} // window settled -> clear
+  $('tInfo').innerHTML=TG?`<span class="up">✓</span> Target <b style="color:var(--text)">${f2(TG.v)}</b> set for <b style="color:var(--text)">${pt(TG.t)}</b> · <a href="#" id="tClr" style="color:var(--mute)">clear</a>`:'No target set.';
+  const c=document.getElementById('tClr');if(c)c.onclick=e=>{e.preventDefault();TG=null;LS.set('btcTG',null);tInfo();draw()}}
+$('tForm').addEventListener('submit',e=>{e.preventDefault();const v=parseFloat($('target').value.replace(/[$,\s]/g,''));if(!(v>0))return;
+  TG={v,t:checkpoints()[0]};LS.set('btcTG',TG);$('target').value='';$('target').blur();tInfo();draw()});
+tInfo();setInterval(tInfo,5000);
 
 function draw(){
   if(S.price==null||S.vol15==null)return;
-  const cps=checkpoints(),T=parseFloat($('target').value);
+  const cps=checkpoints();
   $('cards').innerHTML=cps.map((t,i)=>{
     const d=dist(t),bb=bestBand(d),L=ladder(d),mx=Math.max(...L.map(r=>r.p));
-    const vs=T>0?(()=>{const v=verdict(d,T);return`<div class="vs"><span>vs ${f0(T)}</span><span class="v ${v.c}">${v.w} · ${Math.round(v.p*100)}%</span></div>`})():'';
+    const T=tgtFor(t),vs=T>0?(()=>{const v=verdict(d,T);return`<div class="vs"><span>vs ${f0(T)}</span><span class="v ${v.c}">${v.w} · ${Math.round(v.p*100)}%</span></div>`})():'';
     return `<div class="card${i===0?' next':''}">
       <div class="hd"><b>${pt(t)}</b><span class="cd num">${i===0?'settles in '+mmss((t-Date.now())/1000):'in '+Math.round(d.mins)+' min'}</span></div>
       <div class="best num">${f0(bb.lo)} – ${f0(bb.hi)}</div>
@@ -312,7 +324,7 @@ function draw(){
       ${vs}</div>`}).join('');
   const I=S.ind,lab=x=>x>.15?'<span class="up">bullish</span>':x<-.15?'<span class="down">bearish</span>':'<span class="flat">neutral</span>';
   $('meterI').style.left=(50+Math.max(-1,Math.min(1,I.sc*2))*50)+'%';
-  $('leanTxt').innerHTML=I.sc>.12?'<span class="up">Leaning up</span>':I.sc<-.12?'<span class="down">Leaning down</span>':'<span class="flat">No clear edge</span>';
+  $('leanTxt').innerHTML='<span class="flat">'+(I.sc>.12?'up-tilted':I.sc<-.12?'down-tilted':'mixed')+'</span>';
   $('cond').innerHTML=[
     ['Typical 15-min move','±$'+f0(S.price*S.vol15).slice(1)+' · '+(S.vol15*1e4).toFixed(1)+' bps',null],
     ['Trend (EMA20 vs 50)',sgn(I.e20-I.e50),I.sig.trend],
@@ -330,7 +342,7 @@ function chart(t){
   const cv=$('chart'),dpr=devicePixelRatio||1,W=cv.clientWidth,H=cv.clientHeight;if(!W)return;
   cv.width=W*dpr;cv.height=H*dpr;const g=cv.getContext('2d');g.scale(dpr,dpr);
   const now=Date.now(),pts=S.c1.slice(-120).map(x=>[x[0]*1000,x[4]+S.basis+S.kOff]);pts.push([now,S.price]);
-  const d=dist(t),T=parseFloat($('target').value);
+  const d=dist(t),T=tgtFor(t);
   const k90=1.53,k50=.53; // unit-variance t4 quantiles
   const t0=pts[0][0],t1=t+90000;
   const ys=pts.map(p=>p[1]).concat([d.mid*Math.exp(k90*d.s),d.mid*Math.exp(-k90*d.s)]);if(T>0)ys.push(T);
@@ -384,11 +396,11 @@ $('test').onclick=()=>{if(NT.desk)askDesk();if(S.vol15==null)return notify('TEST
 $('clrFeed').onclick=()=>$('feed').innerHTML='<div class="cd">Sent alerts will appear here.</div>';
 
 const sentCp=new Set();let lastFlip=null,lastMoveAt=0;
-function cpMsg(t){const d=dist(t),bb=bestBand(d),T=parseFloat($('target').value);let m=`BTC ${f0(S.price)} · ${pt(t)} best band ${f0(bb.lo)}–${f0(bb.hi)} (${Math.round(bb.p*100)}%)`;if(T>0){const v=verdict(d,T);m+=` · vs ${f0(T)}: ${v.w} ${Math.round(v.p*100)}%`}return m}
+function cpMsg(t){const d=dist(t),bb=bestBand(d),T=tgtFor(t);let m=`BTC ${f0(S.price)} · ${pt(t)} best band ${f0(bb.lo)}–${f0(bb.hi)} (${Math.round(bb.p*100)}%)`;if(T>0){const v=verdict(d,T);m+=` · vs ${f0(T)}: ${v.w} ${Math.round(v.p*100)}%`}return m}
 function checkTimedAlerts(){
   if(S.price==null||S.vol15==null)return;const t=checkpoints()[0],left=(t-Date.now())/1000,lead=+NT.rCpMin*60;
   if(NT.rCp&&left<=lead&&left>lead-45&&!sentCp.has(t)){sentCp.add(t);notify(cpMsg(t))}
-  const T=parseFloat($('target').value);
+  const T=tgtFor(t);
   if(NT.rFlip&&T>0){const v=verdict(dist(t),T).w;if(v!=='TOSS-UP'){if(lastFlip&&lastFlip.t===t&&lastFlip.w!==v)notify(`Target call flipped → ${v} ${f0(T)} for ${pt(t)} · BTC ${f0(S.price)}`);lastFlip={t,w:v}}}
 }
 function checkPriceAlerts(){
@@ -403,7 +415,7 @@ function checkPriceAlerts(){
 let log=LS.get('btcLog2',[]);
 function snapshot(){
   if(S.price==null||S.vol15==null)return;const t=checkpoints()[0],left=(t-Date.now())/1000;
-  if(left<=60&&left>40&&!log.find(e=>e.t===t)){const d=dist(t),bb=bestBand(d),T=parseFloat($('target').value);
+  if(left<=60&&left>40&&!log.find(e=>e.t===t)){const d=dist(t),bb=bestBand(d),T=tgtFor(t);
     log.unshift({t,lo:bb.lo,hi:bb.hi,p:bb.p,T:T>0?T:null,pa:T>0?1-d.cdf(T):null});log=log.slice(0,300);LS.set('btcLog2',log)}
 }
 function scoreLog(){
