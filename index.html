@@ -68,6 +68,14 @@
   .feed div{padding:3px 0;border-bottom:1px solid #1b1f25}
   table{width:100%;border-collapse:collapse;font-size:12px}
   td,th{padding:4px;border-bottom:1px solid var(--line);text-align:right} td:first-child,th:first-child{text-align:left} th{color:var(--mute);font-weight:500}
+  .tc{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:center;margin-bottom:12px}
+  @media(max-width:760px){.tc{grid-template-columns:1fr}}
+  .tcIn{display:grid;grid-template-columns:1fr 1fr;gap:8px;min-width:260px}
+  .tcIn label{font-size:11px;color:var(--mute);display:block;margin-bottom:3px}
+  .sigBig{font-size:30px;font-weight:800;letter-spacing:-.01em}
+  .tcRow{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:8px;font-size:12.5px}
+  .tcRow div{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px}
+  .tcRow b{display:block;font-size:16px;margin-top:2px}
   .note{color:var(--mute);font-size:11px;margin-top:12px;line-height:1.55}
   .err{color:var(--down);font-size:12px;margin-top:6px}
 </style>
@@ -98,6 +106,18 @@
       <div class="cd num" id="kInfo" style="margin-top:6px">Not synced. Showing the raw multi-exchange median.</div>
     </div>
   </header>
+
+  <div class="card tc" id="tcCard">
+    <div>
+      <div class="lbl" style="margin-bottom:8px">Trade check · <span id="tcWin">next window</span></div>
+      <form class="tcIn" id="tcForm">
+        <div><label>Kalshi UP price (¢)</label><input id="tcUp" placeholder="e.g. 46" inputmode="decimal" enterkeyhint="done" autocomplete="off"></div>
+        <div><label>Kalshi DOWN price (¢)</label><input id="tcDn" placeholder="e.g. 54" inputmode="decimal" enterkeyhint="done" autocomplete="off"></div>
+        <button class="pri" type="submit" style="grid-column:1/-1">Check</button>
+      </form>
+    </div>
+    <div id="tcOut"><div class="cd">Set Kalshi's target above, then enter the Up and Down prices shown on Kalshi's buttons (54% = 54¢).</div></div>
+  </div>
 
   <div class="grid" id="cards"></div>
 
@@ -161,7 +181,7 @@
   </div>
 
   <div class="note">
-    <b>Price source.</b> Kalshi settles BTC markets on the CF Benchmarks Real-Time Index (BRTI), averaged over the 60 seconds before each checkpoint. BRTI itself requires a paid license, so this page tracks a stand-in: the median of Coinbase, Kraken, Gemini and Crypto.com mid-prices, streamed tick-by-tick from Coinbase with the cross-exchange offset applied. Expect it to sit within a few dollars of Kalshi's number, not match it to the cent. Bands forecast that 60-second average, not the last trade. <b>Method.</b> Volatility blends four estimators: 24h close-to-close, an EWMA (λ = 0.94) of 15-min returns, Garman–Klass on the last 60 one-minute candles, and Parkinson high/low range. That blend is scaled by an hour-of-day seasonality factor from the last ~3 days. Outcomes use a fat-tailed Student-t (ν = 4) rather than a bell curve, because 15-min crypto returns have heavier tails than normal. Bands are centered on the current price with no directional tilt: in backtests, trend, momentum and mean-reversion signals all called 15-minute direction about 50% of the time, while the volatility bands were well calibrated (best $100 band hit 76% vs 73% predicted; 90% range hit 91%). At 15-minute horizons BTC is mostly noise: the edge is in sizing the range correctly, not in calling direction. The track record shows whether the stated odds hold up. Not financial advice.
+    <b>Trade check.</b> Edge = fair odds × $1 − price − Kalshi fee (≈ 0.07·P·(1−P), max ~2¢). TRADE appears only when the edge is at least 5¢ and the fair odds are at least 60%. Fair odds include extra uncertainty because this page's price is a stand-in for Kalshi's index (±$4 after syncing, ±$10 before). <b>Price source.</b> Kalshi settles BTC markets on the CF Benchmarks Real-Time Index (BRTI), averaged over the 60 seconds before each checkpoint. BRTI itself requires a paid license, so this page tracks a stand-in: the median of Coinbase, Kraken, Gemini and Crypto.com mid-prices, streamed tick-by-tick from Coinbase with the cross-exchange offset applied. Expect it to sit within a few dollars of Kalshi's number, not match it to the cent. Bands forecast that 60-second average, not the last trade. <b>Method.</b> Volatility blends four estimators: 24h close-to-close, an EWMA (λ = 0.94) of 15-min returns, Garman–Klass on the last 60 one-minute candles, and Parkinson high/low range. That blend is scaled by an hour-of-day seasonality factor from the last ~3 days. Outcomes use a fat-tailed Student-t (ν = 4) rather than a bell curve, because 15-min crypto returns have heavier tails than normal. Bands are centered on the current price with no directional tilt: in backtests, trend, momentum and mean-reversion signals all called 15-minute direction about 50% of the time, while the volatility bands were well calibrated (best $100 band hit 76% vs 73% predicted; 90% range hit 91%). At 15-minute horizons BTC is mostly noise: the edge is in sizing the range correctly, not in calling direction. The track record shows whether the stated odds hold up. Not financial advice.
     <div class="err" id="err"></div>
   </div>
 </div>
@@ -289,6 +309,8 @@ function dist(t){
     const known=got?got.m:S.price,kk=got?Math.min(k,got.n):0;
     const sf=sm*Math.sqrt(r/60/3);mid=(kk*known+r*S.price)/(kk+r||1);s=Math.max(1e-6,sf*r/(kk+r||1));
   }
+  const sb=(S.kOff?4:10)/S.price; // our index vs Kalshi's BRTI: ~$4 synced, ~$10 unsynced
+  s=Math.sqrt(s*s+sb*sb);
   const cdf=x=>T4(Math.log(x/mid)/s);
   return{mins:Math.max(.05,mins),s,cdf,mid};
 }
@@ -309,6 +331,35 @@ function tInfo(){const nx=checkpoints()[0];if(TG&&TG.t<nx-1){TG=null;LS.set('btc
 $('tForm').addEventListener('submit',e=>{e.preventDefault();const v=parseFloat($('target').value.replace(/[$,\s]/g,''));if(!(v>0))return;
   TG={v,t:checkpoints()[0]};LS.set('btcTG',TG);$('target').value='';$('target').blur();tInfo();draw()});
 tInfo();setInterval(tInfo,5000);
+
+/* ---------- trade check: model fair value vs Kalshi price, after fees ---------- */
+let TC=null; // {up,dn,at,t}
+const kFee=c=>Math.ceil(7*(c/100)*(1-c/100)); // Kalshi taker fee ≈ $0.07·P·(1−P) per contract, rounded up to the cent → in ¢ (1-contract worst case)
+$('tcForm').addEventListener('submit',e=>{e.preventDefault();const u=parseFloat($('tcUp').value),d=parseFloat($('tcDn').value);
+  if(!(u>0&&u<100)&&!(d>0&&d<100))return;TC={up:u>0&&u<100?u:null,dn:d>0&&d<100?d:null,at:Date.now(),t:checkpoints()[0]};
+  document.activeElement.blur();tradeCheck()});
+function tradeCheck(){
+  const t=checkpoints()[0];$('tcWin').textContent=pt(t)+' window';
+  if(S.price==null||S.vol15==null)return;
+  const T=tgtFor(t),out=$('tcOut');
+  if(!(T>0)){out.innerHTML='<div class="cd">Set Kalshi\'s <b>target</b> above first. Then enter the Up and Down prices from Kalshi\'s buttons (54% = 54¢).</div>';return}
+  const d=dist(t),pUp=1-d.cdf(T),left=(t-Date.now())/1000;
+  if(!TC||TC.t!==t){out.innerHTML=`<div class="cd">Fair odds right now: <b class="up">UP ${Math.round(pUp*100)}%</b> · <b class="down">DOWN ${Math.round((1-pUp)*100)}%</b>. Enter Kalshi's prices to check for an edge.</div>`;return}
+  const age=(Date.now()-TC.at)/1000,stale=age>25;
+  const side=(c,p)=>c==null?null:{c,ev:p*100-c-kFee(c),p};
+  const U=side(TC.up,pUp),D=side(TC.dn,1-pUp),best=[U,D].filter(Boolean).sort((a,b)=>b.ev-a.ev)[0],isUp=best===U;
+  const ok=best.ev>=5&&best.p>=.6&&!stale;
+  const sig=stale?['flat','RE-ENTER PRICES']:ok?[isUp?'up':'down','TRADE '+(isUp?'UP':'DOWN')]:['flat','SKIP'];
+  const why=stale?`Prices are ${Math.round(age)}s old. Kalshi moves fast, so enter fresh ones.`:
+    ok?`Kalshi is underpricing ${isUp?'UP':'DOWN'} by ${best.ev.toFixed(1)}¢ per contract after fees.${left>300?' More than 5 min left: the odds will still swing, so keep size small.':''}`:
+    best.ev>0?`Edge of only ${best.ev.toFixed(1)}¢. Below the 5¢ bar, too thin to beat noise and price-source error.`:
+    `No edge: Kalshi's price is at or better than fair value for both sides.`;
+  const cell=(lbl,x)=>x?`<div>${lbl} @ ${x.c}¢<b class="${x.ev>=5?'up':x.ev<0?'down':''}">${x.ev>=0?'+':''}${x.ev.toFixed(1)}¢</b><span class="cd">fair ${Math.round(x.p*100)}¢ · fee ${kFee(x.c).toFixed(0)}¢</span></div>`:`<div>${lbl}<b class="flat">—</b><span class="cd">no price</span></div>`;
+  out.innerHTML=`<div class="hd"><span class="sigBig ${sig[0]}">${sig[1]}</span><span class="cd num">settles in ${mmss(left)}</span></div>
+    <div class="cd" style="margin-top:4px">${why}</div>
+    <div class="tcRow">${cell('Buy UP',U)}${cell('Buy DOWN',D)}<div>vs target ${f0(T)}<b class="num">${S.price>=T?'+':''}${(S.price-T).toFixed(0)}</b><span class="cd">now ${f0(S.price)}</span></div></div>`;
+}
+setInterval(tradeCheck,1000);
 
 function draw(){
   if(S.price==null||S.vol15==null)return;
