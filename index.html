@@ -84,9 +84,9 @@
 <div class="wrap">
   <header>
     <div>
-      <div class="lbl">BTC · Kalshi-style index (BRTI proxy) · live</div>
+      <div class="lbl">BTC · matches Kalshi "Now" (60-sec average)</div>
       <div class="price num" id="price">—</div>
-      <div class="live"><span class="dot" id="dot"></span><span id="status">Connecting…</span></div>
+      <div class="live"><span class="dot" id="dot"></span><span id="status">Connecting…</span> · last trade <b class="num" id="live" style="color:var(--text);transition:color .25s">—</b></div>
       <div class="cd num" id="avg60" style="margin-top:4px"></div>
       <div class="cd num" id="srcs" style="margin-top:2px"></div>
     </div>
@@ -103,7 +103,7 @@
         <input id="kNow" placeholder="e.g. 75577.67" inputmode="decimal" autocomplete="off">
         <button class="pri" id="kSync">Sync</button><button id="kReset" title="Remove offset">Reset</button>
       </div>
-      <div class="cd num" id="kInfo" style="margin-top:6px">Not synced. Showing the raw multi-exchange median.</div>
+      <div class="cd num" id="kInfo" style="margin-top:6px">Not synced. Usually within ~$5 of Kalshi; sync to tighten.</div>
     </div>
   </header>
 
@@ -181,7 +181,7 @@
   </div>
 
   <div class="note">
-    <b>Trade check.</b> Edge = fair odds × $1 − price − Kalshi fee (≈ 0.07·P·(1−P), max ~2¢). TRADE appears only when the edge is at least 5¢ and the fair odds are at least 60%. Fair odds include extra uncertainty because this page's price is a stand-in for Kalshi's index (±$4 after syncing, ±$10 before). <b>Price source.</b> Kalshi settles BTC markets on the CF Benchmarks Real-Time Index (BRTI), averaged over the 60 seconds before each checkpoint. BRTI itself requires a paid license, so this page tracks a stand-in: the median of Coinbase, Kraken, Gemini and Crypto.com mid-prices, streamed tick-by-tick from Coinbase with the cross-exchange offset applied. Expect it to sit within a few dollars of Kalshi's number, not match it to the cent. Bands forecast that 60-second average, not the last trade. <b>Method.</b> Volatility blends four estimators: 24h close-to-close, an EWMA (λ = 0.94) of 15-min returns, Garman–Klass on the last 60 one-minute candles, and Parkinson high/low range. That blend is scaled by an hour-of-day seasonality factor from the last ~3 days. Outcomes use a fat-tailed Student-t (ν = 4) rather than a bell curve, because 15-min crypto returns have heavier tails than normal. Bands are centered on the current price with no directional tilt: in backtests, trend, momentum and mean-reversion signals all called 15-minute direction about 50% of the time, while the volatility bands were well calibrated (best $100 band hit 76% vs 73% predicted; 90% range hit 91%). At 15-minute horizons BTC is mostly noise: the edge is in sizing the range correctly, not in calling direction. The track record shows whether the stated odds hold up. Not financial advice.
+    <b>Trade check.</b> Edge = fair odds × $1 − price − Kalshi fee (≈ 0.07·P·(1−P), max ~2¢). TRADE appears only when the edge is at least 5¢ and the fair odds are at least 60%. Fair odds include extra uncertainty because this page's price is a stand-in for Kalshi's index (±$4 after syncing, ±$10 before). <b>Price source.</b> Kalshi settles BTC markets on the CF Benchmarks Real-Time Index (BRTI), averaged over the 60 seconds before each checkpoint. BRTI itself requires a paid license, so this page uses a stand-in: the average of Coinbase and Kraken, streamed tick by tick, with the big number shown as a rolling 60-second average like Kalshi's "Now". Checked against Kalshi's real targets, Coinbase and Kraken were within about $7, while Gemini (+$10–19) and Crypto.com (+$24–29) ran high, so those two are left out. Bands forecast the 60-second average, not the last trade. <b>Method.</b> Volatility blends four estimators: 24h close-to-close, an EWMA (λ = 0.94) of 15-min returns, Garman–Klass on the last 60 one-minute candles, and Parkinson high/low range. That blend is scaled by an hour-of-day seasonality factor from the last ~3 days. Outcomes use a fat-tailed Student-t (ν = 4) rather than a bell curve, because 15-min crypto returns have heavier tails than normal. Bands are centered on the current price with no directional tilt: in backtests, trend, momentum and mean-reversion signals all called 15-minute direction about 50% of the time, while the volatility bands were well calibrated (best $100 band hit 76% vs 73% predicted; 90% range hit 91%). At 15-minute horizons BTC is mostly noise: the edge is in sizing the range correctly, not in calling direction. The track record shows whether the stated odds hold up. Not financial advice.
     <div class="err" id="err"></div>
   </div>
 </div>
@@ -226,8 +226,9 @@ function tick(cbp,size,polled){
   S.trades=S.trades.filter(x=>now-x[0]<300000);
   S.prev=S.price;S.price=p;S.tickAt=now;S.hist.push([now,p]);S.hist=S.hist.filter(x=>now-x[0]<600000);
   status(true,polled?'Live · polling every 2s':'Live · streaming every trade');
-  const el=$('price');el.textContent=f2(p);
+  const el=$('live');el.textContent=f2(p);
   if(S.prev!=null&&p!==S.prev){el.style.color=p>S.prev?'var(--up)':'var(--down)';clearTimeout(el._t);el._t=setTimeout(()=>el.style.color='',350)}
+  if(S.sec.length<10)$('price').textContent=f2(p);
   throttleDraw();checkPriceAlerts();
 }
 function status(on,txt){$('dot').className='dot'+(on?' on':'');$('status').textContent=txt}
@@ -237,28 +238,28 @@ async function j(u){const r=await fetch(u,{cache:'no-store'});if(!r.ok)throw new
 /* ================= multi-exchange composite (BRTI proxy) ================= */
 const EX={
   Kraken:['https://api.kraken.com/0/public/Ticker?pair=XBTUSD',j=>{const r=Object.values(j.result)[0];return(+r.a[0]+ +r.b[0])/2}],
-  Gemini:['https://api.gemini.com/v1/pubticker/btcusd',j=>(+j.bid+ +j.ask)/2],
-  'Crypto.com':['https://api.crypto.com/exchange/v1/public/get-tickers?instrument_name=BTC_USD',j=>{const d=j.result.data[0];return(+d.b+ +d.k)/2}]
 };
 async function pollEx(){
   await Promise.all(Object.entries(EX).map(async([k,[u,f]])=>{try{const v=f(await j(u));if(v>0)S.ex[k]={v,t:Date.now()}}catch{}}));
   if(S.cb==null)return;
-  const fresh=Object.values(S.ex).filter(x=>Date.now()-x.t<15000).map(x=>x.v);
-  const all=fresh.concat([S.cb]).sort((a,b)=>a-b);
-  const med=all.length%2?all[(all.length-1)/2]:(all[all.length/2-1]+all[all.length/2])/2; // median resists one bad venue
-  const target=med-S.cb;S.basis=S.basis===0?target:S.basis*.7+target*.3;
+  // Checked against Kalshi's actual targets (9:30, 9:45, 10:45 PT on Nov 8): Coinbase −$5..+$4, Kraken +$2..+$7,
+  // Gemini +$10..+$19, Crypto.com +$24..+$29. So the index = average of Coinbase and Kraken only.
+  const k=S.ex.Kraken&&Date.now()-S.ex.Kraken.t<15000?S.ex.Kraken.v:null;
+  const target=k?(k-S.cb)/2:0;S.basis=S.basis===0?target:S.basis*.7+target*.3;
   $('srcs').textContent='Coinbase '+f2(S.cb)+' · '+Object.entries(S.ex).map(([k,x])=>k+' '+f2(x.v)).join(' · ');
 }
 pollEx();setInterval(pollEx,2000);
 // Kalshi's "Now" is a 60-second average of BRTI, so we compare it with our own 60s average.
-function kInfo(){$('kInfo').textContent=S.kOff?`Synced: offset ${S.kOff>=0?'+':''}${S.kOff.toFixed(2)} applied. Re-sync any time it drifts.`:'Not synced. Showing the raw multi-exchange median.'}
+function kInfo(){$('kInfo').textContent=S.kOff?`Synced: offset ${S.kOff>=0?'+':''}${S.kOff.toFixed(2)} applied. Re-sync any time it drifts.`:'Not synced. Usually within ~$5 of Kalshi; sync to tighten.'}
 kInfo();
 $('kSync').onclick=()=>{const k=parseFloat($('kNow').value);if(!(k>0)||S.price==null)return;const n=Date.now(),w=S.sec.filter(x=>n-x[0]<60000);
   const ours=w.length>10?w.reduce((s,x)=>s+x[1],0)/w.length:S.price;const d=k-ours;S.kOff+=d;LS.set('kOff',S.kOff);
-  S.sec=S.sec.map(x=>[x[0],x[1]+d]);S.price+=d;$('price').textContent=f2(S.price);$('kNow').value='';kInfo();draw()};
+  S.sec=S.sec.map(x=>[x[0],x[1]+d]);S.price+=d;$('kNow').value='';kInfo();draw()};
 $('kReset').onclick=()=>{S.sec=S.sec.map(x=>[x[0],x[1]-S.kOff]);if(S.price!=null)S.price-=S.kOff;S.kOff=0;LS.set('kOff',0);kInfo();draw()};
 setInterval(()=>{if(S.price==null)return;const n=Date.now();S.sec.push([n,S.price]);S.sec=S.sec.filter(x=>n-x[0]<180000);
-  const w=S.sec.filter(x=>n-x[0]<60000);if(w.length>5)$('avg60').textContent='60-sec average (how Kalshi settles): '+f2(w.reduce((s,x)=>s+x[1],0)/w.length)},1000);
+  const w=S.sec.filter(x=>n-x[0]<60000);if(w.length>=10){const a=w.reduce((s,x)=>s+x[1],0)/w.length,el=$('price'),pv=+el.dataset.v||a;
+    el.textContent=f2(a);el.dataset.v=a;if(a!==pv){el.style.color=a>pv?'var(--up)':'var(--down)';clearTimeout(el._t);el._t=setTimeout(()=>el.style.color='',500)}
+    $('avg60').textContent=''}else $('avg60').textContent='Building the 60-sec average… ('+w.length+'/60s)'},1000);
 const avgBetween=(a,b)=>{const w=S.sec.filter(x=>x[0]>=a&&x[0]<b);return w.length?{m:w.reduce((s,x)=>s+x[1],0)/w.length,n:w.length}:null};
 
 /* ================= history & model ================= */
