@@ -93,11 +93,11 @@
     <div class="tgt">
       <div class="lbl">Target price (optional)</div>
       <form id="tForm" style="display:grid;grid-template-columns:1fr auto;gap:6px;margin-top:6px">
-        <input id="target" placeholder="e.g. 75588.42" inputmode="decimal" enterkeyhint="done" autocomplete="off" style="margin-top:0">
+        <input id="target" placeholder="Target price or paste Kalshi link" inputmode="decimal" enterkeyhint="done" autocomplete="off" style="margin-top:0">
         <button class="pri" type="submit">Set</button>
       </form>
       <div class="cd num" id="tInfo" style="margin-top:6px"></div>
-      <div class="cd" style="margin-top:4px">Enter Kalshi's target for the current window. It applies to the next checkpoint and clears once that window settles.</div>
+      <div class="cd" style="margin-top:4px">Enter Kalshi's target, or paste the market's link to fill it in automatically. It applies to the next checkpoint and clears once that window settles.</div>
       <div class="lbl" style="margin-top:12px">Sync to Kalshi "Now" price</div>
       <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;margin-top:6px">
         <input id="kNow" placeholder="e.g. 75577.67" inputmode="decimal" autocomplete="off">
@@ -328,8 +328,16 @@ const tgtFor=t=>TG&&TG.t===t?TG.v:NaN;
 function tInfo(){const nx=checkpoints()[0];if(TG&&TG.t<nx-1){TG=null;LS.set('btcTG',null)} // window settled -> clear
   $('tInfo').innerHTML=TG?`<span class="up">✓</span> Target <b style="color:var(--text)">${f2(TG.v)}</b> set for <b style="color:var(--text)">${pt(TG.t)}</b> · <a href="#" id="tClr" style="color:var(--mute)">clear</a>`:'No target set.';
   const c=document.getElementById('tClr');if(c)c.onclick=e=>{e.preventDefault();TG=null;LS.set('btcTG',null);tInfo();draw()}}
-$('tForm').addEventListener('submit',e=>{e.preventDefault();const v=parseFloat($('target').value.replace(/[$,\s]/g,''));if(!(v>0))return;
-  TG={v,t:checkpoints()[0]};LS.set('btcTG',TG);$('target').value='';$('target').blur();tInfo();draw()});
+// Accepts a plain price OR a pasted Kalshi link, e.g. kalshi.com/markets/kxbtc15m/btc-15-min--7566471-target/KXBTC15M-26NOV081300
+function parseTarget(raw){
+  const m=raw.match(/--(\d{5,})-target/i);let v,t=checkpoints()[0];
+  if(m){const d=m[1];v=parseFloat(d.slice(0,-2)+'.'+d.slice(-2))}else v=parseFloat(raw.replace(/[$,\s]/g,''));
+  const k=raw.match(/KXBTC15M-\d{2}[A-Z]{3}\d{2}(\d{4})/i); // settle time in US Eastern, HHMM
+  if(k){const hit=checkpoints().find(c=>new Date(c).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false}).replace(':','')===k[1]);if(hit)t=hit}
+  return{v,t};
+}
+$('tForm').addEventListener('submit',e=>{e.preventDefault();const {v,t}=parseTarget($('target').value);if(!(v>0))return;
+  TG={v,t};LS.set('btcTG',TG);$('target').value='';$('target').blur();tInfo();draw()});
 tInfo();setInterval(tInfo,5000);
 
 /* ---------- trade check: model fair value vs Kalshi price, after fees ---------- */
